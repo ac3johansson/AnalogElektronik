@@ -1,0 +1,125 @@
+%Analog elektronik - Transadmittans (V->I)
+%matlab: Fasmarginal, slutna förstärkningen och stegsvaret
+
+clear all;
+close all;
+%Data given
+Rl=1000;
+Rs=50;
+C1=100*1e-9;
+C2=2.2*1e-6;
+AtINF=-1/100; %Asymptotiska förstärkningen
+Bf=200;
+Imax = 14*1e-3;
+Vpk = 150*1e-3;
+Vt = 0.025;
+
+%Data uträknad
+R1=-1/AtINF;
+rpi1prim =  Bf*Bf*R1/(10^(65/20))-(R1+Rs); %Med hänsyn till 65dB
+Ic1min = 4*Bf*Vt/rpi1prim; %Ic1 totalt genom hela AS-steget
+Ic1 = 0.010;
+Ic2max = Imax-Ic1min;
+Ic2 = 0.002;
+rpi2bias = Bf*Vt/Ic2max;
+rpi2pk = -Bf*Vt/(Vpk*AtINF);
+
+
+%DC slingförstärkning och slingpoler:
+ABnoll=-Bf*Bf*R1/(R1+Rs+rpi1prim); % DC slingförstärkningen, AB(0)
+p1=-1/(C2*rpi2pk); %slingpol 1, UTAN kompensering
+p2=-(rpi1prim+R1+Rs)/(C1*rpi1prim*(R1+Rs)); %slingpol 2, UTAN kompensering
+
+%Kompensering (Capacitive narrowbending)
+p1_comp60 = 2*p2/(3*abs(ABnoll));
+C2_comp60 = -3*abs(ABnoll)/(2*p2*rpi2pk);
+p1_comp45 = 2*p2/(sqrt(3)*abs(ABnoll));
+C2_comp45 = -sqrt(3)*abs(ABnoll)/(2*p2*rpi2pk);
+p1_comp65 = 2*p2*tan(deg2rad(25))/(sqrt(3)*abs(ABnoll)); %PM=66.6 funkar bättre för Butterworth
+C2_comp65 = -sqrt(3)*abs(ABnoll)/(2*p2*rpi2pk*tan(deg2rad(25)));
+
+%%Kompensering med valfritt värde på fasmarginal (PM)
+PM_any = 65;
+p1_valfriPM = p2*tan(deg2rad(90-PM_any))*sqrt((1+tan(deg2rad(90-PM_any))^2)/(ABnoll^2-(1+tan(deg2rad(90-PM_any))^2)));
+C2_valfriPM = - sqrt(3)*abs(ABnoll)/(2*rpi2pk*p2*tan(deg2rad(90-PM_any)));
+
+%LP-produkten och w0 samt dominanta poler
+LP = abs((1-ABnoll)*p1*p2);
+w0 = LP^(1/2);
+sumSysPole_noComp = -sqrt(2)*w0;
+sumLoopPole_noComp = p1+p2;
+LP_comp60 = abs((1-ABnoll)*p1_comp60*p2);
+w0_comp60 = LP_comp60^(1/2);
+sumSysPole_comp60 = -sqrt(2)*w0_comp60;
+sumLoopPole_comp60 = p1_comp60+p2;
+LP_comp45 = abs((1-ABnoll)*p1_comp45*p2);
+w0_comp45 = LP_comp45^(1/2);
+sumSysPole_comp45 = -sqrt(2)*w0_comp45;
+sumLoopPole_comp45 = p1_comp45+p2;
+
+w0min = 2*pi*4000; %minsta kravet för w0 enligt spec (f-3dB)
+
+
+%%Definiera s -> ger ett linjärt system
+s=zpk('s');
+
+%%Sling- och slutenförstärkning UTAN kompensering
+ABs=ABnoll/((1-s/p1)*(1-s/p2)); %Slingförstärkningen, AB(s)
+At=AtINF*(-1)*ABs/(1-ABs); %Slutna förstärkningen, At(s).
+
+
+%%DESSA ANVÄNDS EJ
+%%Sling- och slutenförstärkning MED kompensering PM=60°
+ABs_comp60=ABnoll/((1-s/p1_comp60)*(1-s/p2)); %Slingförstärkningen, AB(s)
+At_comp60=AtINF*(-1)*ABs_comp60/(1-ABs_comp60); %Slutna förstärkningen, At(s).
+%%Sling- och slutenförstärkning MED kompensering PM=45°
+ABs_comp45=ABnoll/((1-s/p1_comp45)*(1-s/p2)); %Slingförstärkningen, AB(s)
+At_comp45=AtINF*(-1)*ABs_comp45/(1-ABs_comp45); %Slutna förstärkningen, At(s).
+%%Sling- och slutenförstärkning MED kompensering PM=65°
+ABs_comp65=ABnoll/((1-s/p1_comp65)*(1-s/p2)); %Slingförstärkningen, AB(s)
+At_comp65=AtINF*(-1)*ABs_comp65/(1-ABs_comp65); %Slutna förstärkningen, At(s).
+
+%%Sling- och slutenförstärkning MED kompensering PM=valfri° D
+ABs_valfriPM=ABnoll/((1-s/p1_valfriPM)*(1-s/p2)); %Slingförstärkningen, AB(s)
+At_valfriPM=AtINF*(-1)*ABs_valfriPM/(1-ABs_valfriPM); %Slutna förstärkningen, At(s).
+
+%%Fantomnolla
+nph = -w0^2/(sqrt(2)*w0+p1+p2);
+%På ingången
+Cph_in = -R1/(nph*Rs*R1);
+n_phin = -R1/(Cph_in*Rs*R1);
+p_phin = -(Rs+R1)/(Cph_in*Rs*R1);
+Bs_phin = (1-s/n_phin)/(1-s/p_phin); %utan Bph(0)
+ABs_phin = ABs*Bs_phin;
+At_phin = AtINF*(-1)*ABs_phin/(1-ABs_phin);
+%I återkopplingsnätet
+L_phfb = -R1/nph;
+n_phfb = -R1/L_phfb;
+p_phfb = -(Rs+R1)/L_phfb;
+Bs_phfb = (1-s/n_phfb)/(1-s/p_phfb); %utan Bph(0)
+AtINF_ph = -1/(R1+s*L_phfb);
+ABs_phfb = ABs*Bs_phfb;
+At_phfb = AtINF_ph*(-1)*ABs_phfb/(1-ABs_phfb);
+
+%%PM
+[gain_margin, phase_margin] = margin((-1)*ABs_valfriPM);
+
+%%Bandbredd
+BW = bandwidth(At_valfriPM)/(2*pi);
+
+%%Poler
+poles = pole(At_valfriPM);
+Butterworth = rad2deg(angle(poles(3))) - 90;
+
+
+%Fasmarginal kollas "open loop", dvs frekvensen w0, d r |AB(w0)|=1=0dB,
+%Undersök (plotta) fasmarginal (PM) genom att plotta slingförstärkningen
+figure(1);bode((-1).*ABs,'b', (-1).*ABs_valfriPM,'r',(-1).*ABs_phin,'gs',(-1).*ABs_phfb,'c'); title('Slingförstärkning');%
+grid on;
+legend('Utan kompensering', 'PM=65°', 'Fantom ingång', 'Fantom återkoppling', 'Location','Best')
+figure(2);bode(At,'b', At_valfriPM, 'r', At_phin, 'g', At_phfb, 'c'); title('Den slutna förstärkningen, At');%
+grid on;
+legend('Utan kompensering', 'PM=65°', 'Fantom ingång', 'Fantom återkoppling', 'Location','Best')
+figure(3); step((-1).*At, 'b', (-1).*At_valfriPM, 'r', (-1).*At_phin, 'g', (-1).*At_phfb, 'c'); title('Systemets stegsvar');
+legend('Utan kompensering', 'PM=65°', 'Fantom ingång', 'Fantom återkoppling', 'Location','Best')
+figure(4);rlocus(At_valfriPM,1)
